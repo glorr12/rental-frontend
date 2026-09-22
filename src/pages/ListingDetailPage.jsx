@@ -16,6 +16,21 @@ function nightsBetween(start, end) {
   return Math.max(0, Math.round(ms / (1000 * 60 * 60 * 24)))
 }
 
+// EN: Mirrors BookingSerializer.validate() on the backend - start_date can't be in the past and
+// a stay can't exceed 30 nights. Plain <input type="date"> has no such limits by default, so
+// without min/max here nothing stops picking e.g. year 0000 as a check-in; the request would
+// just get rejected after a full round trip to the server instead of before it's even sent.
+// RU: Повторяет BookingSerializer.validate() на бэкенде - start_date не может быть в прошлом, а
+// бронь не может быть длиннее 30 ночей. У обычного <input type="date"> таких ограничений нет по
+// умолчанию, поэтому без min/max здесь ничто не мешает выбрать, например, check-in года 0000 -
+// запрос просто отклонился бы уже после похода на сервер, а не до его отправки.
+const todayStr = () => new Date().toISOString().slice(0, 10)
+const addDays = (dateStr, days) => {
+  const d = new Date(`${dateStr}T00:00:00`)
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
 function BookingForm({ listing, onBooked }) {
   const [form, setForm] = useState({ start_date: '', end_date: '', guests_count: 1 })
   const [error, setError] = useState('')
@@ -54,11 +69,37 @@ function BookingForm({ listing, onBooked }) {
       <div className="form-row">
         <div className="field">
           <label htmlFor="start_date">Check-in</label>
-          <input id="start_date" type="date" required value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
+          <input
+            id="start_date"
+            type="date"
+            required
+            min={todayStr()}
+            value={form.start_date}
+            onChange={(e) => {
+              const value = e.target.value
+              setForm((f) => {
+                const next = { ...f, start_date: value }
+                // Keep check-out consistent with the newly picked check-in instead of silently
+                // carrying over a now-invalid combination.
+                if (f.end_date && (f.end_date < value || f.end_date > addDays(value, 30))) {
+                  next.end_date = ''
+                }
+                return next
+              })
+            }}
+          />
         </div>
         <div className="field">
           <label htmlFor="end_date">Check-out</label>
-          <input id="end_date" type="date" required value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} />
+          <input
+            id="end_date"
+            type="date"
+            required
+            min={form.start_date || todayStr()}
+            max={addDays(form.start_date || todayStr(), 30)}
+            value={form.end_date}
+            onChange={(e) => setForm({ ...form, end_date: e.target.value })}
+          />
         </div>
       </div>
       <div className="field">

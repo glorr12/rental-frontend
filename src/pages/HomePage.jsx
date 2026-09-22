@@ -24,12 +24,38 @@ const ORDERING_OPTIONS = [
   { value: VIEWS_ORDERING, label: 'Most viewed' },
 ]
 
+// EN: Matches the backend's own booking rule (BookingSerializer.validate(): start_date can't be
+// in the past, and a stay can't exceed 30 nights) - the search filters below are informational
+// (they don't create a booking), but there's no reason to let someone pick a check-in of, say,
+// year 0000 or a check-out 10 years out when no real booking could ever use those dates anyway.
+// RU: Повторяет собственное правило бронирования бэкенда (BookingSerializer.validate():
+// start_date не может быть в прошлом, а бронь не может быть длиннее 30 ночей) - фильтры поиска
+// ниже не создают бронь напрямую, но нет смысла разрешать выбрать check-in года 0000 или
+// check-out на 10 лет вперёд, если такая бронь всё равно невозможна.
+const todayStr = () => new Date().toISOString().slice(0, 10)
+const addDays = (dateStr, days) => {
+  const d = new Date(`${dateStr}T00:00:00`)
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
 function FiltersForm({ params, onSubmit }) {
   const [draft, setDraft] = useState(params)
 
   useEffect(() => setDraft(params), [params])
 
-  const update = (key) => (e) => setDraft((d) => ({ ...d, [key]: e.target.value }))
+  const update = (key) => (e) => {
+    const value = e.target.value
+    setDraft((d) => {
+      const next = { ...d, [key]: value }
+      if (key === 'check_in' && next.check_out && (next.check_out < value || next.check_out > addDays(value, 30))) {
+        // Keep check-out consistent with the newly picked check-in instead of silently
+        // submitting a now-invalid combination.
+        next.check_out = ''
+      }
+      return next
+    })
+  }
 
   return (
     <form
@@ -87,11 +113,18 @@ function FiltersForm({ params, onSubmit }) {
       <div className="form-row" style={{ marginTop: 16 }}>
         <div className="field">
           <label htmlFor="check_in">Check-in</label>
-          <input id="check_in" type="date" value={draft.check_in || ''} onChange={update('check_in')} />
+          <input id="check_in" type="date" min={todayStr()} value={draft.check_in || ''} onChange={update('check_in')} />
         </div>
         <div className="field">
           <label htmlFor="check_out">Check-out</label>
-          <input id="check_out" type="date" value={draft.check_out || ''} onChange={update('check_out')} />
+          <input
+            id="check_out"
+            type="date"
+            min={draft.check_in || todayStr()}
+            max={addDays(draft.check_in || todayStr(), 30)}
+            value={draft.check_out || ''}
+            onChange={update('check_out')}
+          />
         </div>
         <div className="field">
           <label htmlFor="ordering">Sort by</label>
